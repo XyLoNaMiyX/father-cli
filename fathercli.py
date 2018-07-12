@@ -202,27 +202,36 @@ async def create_bot(client, config, name):
 async def main():
     config = Config()
     parser = argparse.ArgumentParser()
-    parser.add_argument('-a', '--api', help='Sets the apiid:apihash pair')
 
-    parser.add_argument('-r', '--reload', help='Reloads the list of bots',
-                        action='store_true')
+    no_bot = parser.add_argument_group('general actions').add_argument
+    need_bot = parser.add_argument_group('actions on a bot').add_argument
+    no_bot('-a', '--api', nargs=2, metavar=('API_ID', 'API_HASH'),
+           help='sets the API ID/API hash pair')
 
-    parser.add_argument('-l', '--list', help='Lists owned bots',
-                        action='store_true')
+    no_bot('-c', '--create', nargs=2, metavar=('USERNAME', 'DISPLAY'),
+           help='creates a bot with the given display name')
 
-    parser.add_argument('-c', '--create', help='Creates name@username bot')
+    no_bot('-r', '--reload', action='store_true',
+           help='reloads the list of bots')
 
-    parser.add_argument('-t', '--token', help='Get a existing token for a bot')
-    parser.add_argument('-n', '--newtoken', help='Get a new token for a bot')
+    no_bot('-l', '--list', action='store_true',
+           help='lists owned bots (reloads if no bots are known)')
 
-    parser.add_argument('-d', '--delete', help='Deletes a bot')
+    need_bot('-n', '--newtoken', metavar='BOT',
+             help='generate and get a new token for a bot')
+
+    need_bot('-t', '--token', metavar='BOT',
+             help='get an existing token for a bot')
+
+    need_bot('-d', '--delete', metavar='BOT',
+             help='deletes a bot')
 
     args = parser.parse_args()
     if not config.api_id and not args.api:
         eprint('Please configure API ID and hash by running with '
                '--api 12345:1a2b3c4d5e6f')
     elif args.api:
-        api_id, api_hash = args.api.split(':')
+        api_id, api_hash = args.api
         config.api_id = int(api_id)
         config.api_hash = api_hash
 
