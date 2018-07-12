@@ -7,8 +7,7 @@ import re
 import sys
 
 from async_generator import async_generator, aclosing, yield_
-from telethon import events
-from telethon.sync import TelegramClient
+from telethon import TelegramClient, events
 from telethon.tl import types
 
 logging.basicConfig(level=logging.WARNING)
@@ -143,7 +142,7 @@ async def get_token(client, bot_id, revoke=True):
     eprint('Failed to retrieve token for bot', bot_id)
 
 
-async def delete_bot(client, bot_id):
+async def delete_bot(client, config, bot_id):
     path = 'bots/{}/del'.format(bot_id).encode('ascii')
     message = await get_bot_menu(client, bot_id)
     for _ in range(3):
@@ -154,8 +153,14 @@ async def delete_bot(client, bot_id):
         )
         path += b'/yes'
 
+    for i, t in enumerate(config.bots):
+        if t[0] == bot_id:
+            del config.bots[i]
+            config.save()
+            break
 
-async def create_bot(client, name):
+
+async def create_bot(client, config, name):
     if '@' not in name:
         eprint('You must specify your bot name as "Bot Name@username"')
 
@@ -186,6 +191,9 @@ async def create_bot(client, name):
 
     for entity, text in message.get_entities_text():
         if isinstance(entity, types.MessageEntityCode):
+            bot_id = await client.get_peer_id(username)
+            config.bots.insert(0, (bot_id, username))
+            config.save()
             return text
 
     eprint('Bot created but failed to retrieve token')
@@ -232,7 +240,7 @@ async def main():
             print('Total: ', len(config.bots))
 
         if args.create:
-            print(await create_bot(client, args.create))
+            print(await create_bot(client, config, args.create))
 
         if args.token or args.newtoken:
             bot_id = find_bot(config, args.token or args.newtoken)
@@ -240,7 +248,7 @@ async def main():
 
         if args.delete:
             bot_id = find_bot(config, args.delete)
-            await delete_bot(client, bot_id)
+            await delete_bot(client, config, bot_id)
 
 if __name__ == '__main__':
     asyncio.get_event_loop().run_until_complete(main())
