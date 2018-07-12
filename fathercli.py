@@ -95,7 +95,7 @@ async def create_bot(client, name):
     name, username = name.rsplit('@', 1)
     name = name.strip()
     username = username.strip()
-    if not username.endswith('bot'):
+    if username[-3:].lower() != 'bot':
         username += 'bot'
 
     message = await await_event(
