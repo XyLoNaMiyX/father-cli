@@ -3,8 +3,10 @@ import argparse
 import asyncio
 import json
 import logging
+import re
 import sys
 
+from async_generator import async_generator, aclosing, yield_
 from telethon import events
 from telethon.sync import TelegramClient
 from telethon.tl import types
@@ -45,6 +47,17 @@ def eprint(*args, **kwargs):
     quit(1)
 
 
+def find_bot(config, query):
+    clean = re.compile(r'[@\s]|(_?bot)$', re.IGNORECASE)
+    q = clean.sub('', query).lower()
+    for bot_id, bot_username in config.bots:
+        bot_username = clean.sub('', bot_username).lower()
+        if q in (str(bot_id), bot_username):
+            return bot_id
+
+    eprint('No bot found for ', q)
+
+
 async def await_event(client, event, pre):
     message = asyncio.Future()
 
@@ -58,25 +71,21 @@ async def await_event(client, event, pre):
     return message
 
 
-async def load_bots(client):
+@async_generator
+async def iter_buttons(client):
     message = await await_event(
         client,
         events.NewMessage(FATHER),
         client.send_message(FATHER, '/mybots')
     )
 
-    bots = []
-    if message.raw_text.startswith(NO_BOTS_MESSAGE):
-        return bots
-
-    done = False
+    done = not message.buttons
     while not done:
         done = True
         for row in message.buttons:
             for button in row:
                 if button.text.startswith('@'):
-                    bot_id = int(button.data[button.data.index(b'/') + 1:])
-                    bots.append((bot_id, button.text))
+                    await yield_(button)
                 elif button.text == NEXT:
                     done = False
                     message = await await_event(
@@ -85,7 +94,53 @@ async def load_bots(client):
                         button.click()
                     )
 
+
+def get_bot_id(button):
+    return int(button.data[button.data.index(b'/') + 1:])
+
+
+async def load_bots(client):
+    bots = []
+    async with aclosing(iter_buttons(client)) as it:
+        async for button in it:
+            bots.append((get_bot_id(button), button.text))
+
     return bots
+
+
+async def get_bot_menu(client, bot_id):
+    async with aclosing(iter_buttons(client)) as it:
+        async for button in it:
+            if get_bot_id(button) == bot_id:
+                return await await_event(
+                    client,
+                    events.MessageEdited(FATHER),
+                    pre=button.click()
+                )
+        else:
+            eprint('No bot with ID', bot_id, 'found')
+
+
+async def get_token(client, bot_id, revoke=True):
+    path = 'bots/{}/tokn'.format(bot_id).encode('ascii')
+    message = await get_bot_menu(client, bot_id)
+    message = await await_event(
+        client,
+        events.MessageEdited(FATHER),
+        pre=message.click(data=path)
+    )
+    if revoke:
+        message = await await_event(
+            client,
+            events.MessageEdited(FATHER),
+            pre=message.click(data=path + b'/revoke')
+        )
+
+    for entity, text in message.get_entities_text():
+        if isinstance(entity, types.MessageEntityCode):
+            return text
+
+    eprint('Failed to retrieve token for bot', bot_id)
 
 
 async def create_bot(client, name):
@@ -123,6 +178,7 @@ async def create_bot(client, name):
 
     eprint('Bot created but failed to retrieve token')
 
+
 async def main():
     config = Config()
     parser = argparse.ArgumentParser()
@@ -135,6 +191,9 @@ async def main():
                         action='store_true')
 
     parser.add_argument('-c', '--create', help='Creates name@username bot')
+
+    parser.add_argument('-t', '--token', help='Get a existing token for a bot')
+    parser.add_argument('-n', '--newtoken', help='Get a new token for a bot')
 
     args = parser.parse_args()
     if not config.api_id and not args.api:
@@ -160,6 +219,10 @@ async def main():
 
         if args.create:
             print(await create_bot(client, args.create))
+
+        if args.token or args.newtoken:
+            bot_id = find_bot(config, args.token or args.newtoken)
+            print(await get_token(client, bot_id, revoke=bool(args.newtoken)))
 
 if __name__ == '__main__':
     asyncio.get_event_loop().run_until_complete(main())
