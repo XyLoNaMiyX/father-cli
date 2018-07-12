@@ -143,6 +143,18 @@ async def get_token(client, bot_id, revoke=True):
     eprint('Failed to retrieve token for bot', bot_id)
 
 
+async def delete_bot(client, bot_id):
+    path = 'bots/{}/del'.format(bot_id).encode('ascii')
+    message = await get_bot_menu(client, bot_id)
+    for _ in range(3):
+        message = await await_event(
+            client,
+            events.MessageEdited(FATHER),
+            pre=message.click(data=path)
+        )
+        path += b'/yes'
+
+
 async def create_bot(client, name):
     if '@' not in name:
         eprint('You must specify your bot name as "Bot Name@username"')
@@ -195,6 +207,8 @@ async def main():
     parser.add_argument('-t', '--token', help='Get a existing token for a bot')
     parser.add_argument('-n', '--newtoken', help='Get a new token for a bot')
 
+    parser.add_argument('-d', '--delete', help='Deletes a bot')
+
     args = parser.parse_args()
     if not config.api_id and not args.api:
         eprint('Please configure API ID and hash by running with '
@@ -223,6 +237,10 @@ async def main():
         if args.token or args.newtoken:
             bot_id = find_bot(config, args.token or args.newtoken)
             print(await get_token(client, bot_id, revoke=bool(args.newtoken)))
+
+        if args.delete:
+            bot_id = find_bot(config, args.delete)
+            await delete_bot(client, bot_id)
 
 if __name__ == '__main__':
     asyncio.get_event_loop().run_until_complete(main())
